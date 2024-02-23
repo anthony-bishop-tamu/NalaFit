@@ -1,21 +1,28 @@
-import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
 
-# Create a sample DataFrame
-data = {'Column_A': [1, 2, 3, 4],
-        'Column_B': [5, 6, 7, 8],
-        'Column_C': [9, 10, 11, 12],
-        'Column_D': [13, 14, 15, 16]}
+# Sample data (Gaussian distributed)
+np.random.seed(0)
+data = np.random.normal(loc=2, scale=1, size=1000)  # Example data with mean=2 and std=1
 
-df = pd.DataFrame(data)
+# Plot the histogram of the data
+plt.hist(data, bins=30, density=True, alpha=0.5, color='b', label='Histogram')
 
-# Get the index position of the second column (index starts from 0)
-column_to_multiply = 1
+# Compute the PDF values for a Gaussian distribution with the same mean and standard deviation
+mean = np.mean(data)
+std = np.std(data)
+x = np.linspace(mean - 3*std, mean + 3*std, 1000)
+pdf_values = norm.pdf(x, loc=mean, scale=std)
 
-# Perform elementwise multiplication with broadcasting
-result = df.iloc[:, [column_to_multiply]].values * df.iloc[:, 3:].values
+# Overlay the PDF curve on top of the histogram
+plt.plot(x, pdf_values, color='r', label='Gaussian PDF')
 
-# Create a new DataFrame with the result
-result_df = pd.DataFrame(result, columns=df.columns[3:])
+# Add labels and title
+plt.xlabel('Value')
+plt.ylabel('Density')
+plt.title('Histogram and Gaussian PDF')
+plt.legend()
 
-# Display the result
-print(result_df)
+# Show plot
+plt.show()

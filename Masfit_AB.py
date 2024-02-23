@@ -2,15 +2,24 @@
 #Goal of this script is to improve the generality of the fitting software and work with python 3.0+
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
+import matplotlib.mlab as mlab
 import scipy.optimize
+from scipy.stats import norm
+import warnings
 import scipy.optimize as opt
 import pandas as pd
 import re
 import math
 import numpy as np
+import os
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+import sys
+import cProfile
 
 def denormalizeDataFrame(dataFrame):
-    result = dataFrame.iloc[:,[2]].values*dataFrame.iloc[:,3:].values
+    #result = dataFrame.iloc[:,[2]].values*dataFrame.iloc[:,3:].values
+    result = dataFrame.iloc[:,3:].values
     dataFrame.iloc[:,3:] = pd.DataFrame(result)
     dataFrame = dataFrame.drop(columns=dataFrame.columns[2])
     return dataFrame
@@ -45,10 +54,11 @@ def calculateNoise(timeValues,dataFrame,firstCDataColumnIndex):
     return math.sqrt(rms/count)
 #
 class relaxationModel:
-    def __init__(self,modelName, parameterNames,function):
+    def __init__(self,modelName, parameterNames,bounds,function):
         self.parameterNames = parameterNames
         self.function = function
         self.name = modelName
+        self.bounds = bounds
     #
     def __call__(self,x,p):
         if len(p) != len(self.parameterNames):
@@ -61,37 +71,65 @@ class relaxationModel:
 #
 def fit2(x,p):
     assert(len(p) == 2)
-    return (p[0]*(np.exp((x*-1.0/p[1]))))
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error")
+        try:
+            return (p[0]*(np.exp((x*-1.0/p[1]))))
+        except Warning as e:
+            raise OverflowError(f"Overflow error in fit2: {p}, {x}")
+        #
+
 
 def fit3(x,p):
     assert len(p) == 3
-    return ((p[0]*np.exp(x*-1.0/p[1]))+p[2])
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error")
+        try:
+            return ((p[0]*np.exp(x*-1.0/p[1]))+p[2])
+        except Warning as e:
+            raise OverflowError(f"Overflow error in fit3: {p}, {x}")
+        #
 
 def residuals(p,y,x,u,model):
-    err=((y-model(x,p))/u)**2
-    return np.sum(err)
+    err=((y-model(x,p))/u)
+    return err
 
-def fitFunction(model,timeValues,ydata,rms,initialParams):
+def sumSquared(p,y,x,u,model):
+    return np.sum(np.square(residuals(p,y,x,u,model)))
 
-    initialParams[0] = np.max(ydata)
-    initialParams[1] = np.mean(timeValues)
-    result = scipy.optimize.minimize(residuals,initialParams,args=(ydata,timeValues,rms,model))
-    return result
-#
-def monteCarloFit(model,timeValues,ydata,rms,numIterations):
-    parametersForFit = None
-    for i in range(numIterations):
-        result = fitFunction(model,timeValues,ydata,rms)
-        if(parametersForFit is None):
-            parametersForFit = np.zeros((numIterations,result.x.shape[0]))
+def fitFunction(model,timeValues,ydata,rms,initialParams=None):
+    if initialParams is None:
+        ranges = [ (np.max(ydata),2*np.max(ydata)), (np.min(timeValues),5*np.max(timeValues))]
+        if model.numParameters() == 3:
+            ranges.append((-1,1))
         #
-        parametersForFit[i,:] = result.x
+        initialParams = scipy.optimize.brute(sumSquared,ranges,args=(ydata,timeValues,rms,model),Ns=5,finish=None)
+    params_opt, cov_x, infodict, msg, ier = scipy.optimize.leastsq(residuals,initialParams,args=(ydata,timeValues,rms,model),full_output=True)
+    return params_opt
+#
+def monteCarloFit(model,initialParams,timeValues,ydata,rms,numIterations):
+    parametersForFit = None
+    i = 0
+    while i < numIterations:
+        randomizedYdata = np.random.normal(ydata,rms)
+        try:
+            result = fitFunction(model,timeValues,randomizedYdata,rms,initialParams)
+        except OverflowError as e:
+            continue
+        #
+
+        if(parametersForFit is None):
+            parametersForFit = np.zeros((numIterations,result.shape[0]))
+        #
+        parametersForFit[i,:] = result
+        i=i+1
     #
-    return parametersForFit;
+    return parametersForFit
 #
 def generateFitPlot(model,timeValues,ydata,rmsError,fit,siteID,destination):
-    fitParameters = fit.x
-    chi2 = fit.fun
+    fitParameters = fit
+    fitParameters = tuple(fitParameters)
+    chi2 = np.sum(np.square((ydata - model(timeValues,fitParameters))/rmsError))
     normChi2 = chi2/(ydata.shape[0] - model.numParameters())
 
     xrange = np.linspace(0,np.max(timeValues),1000)
@@ -131,21 +169,100 @@ def generateFitPlot(model,timeValues,ydata,rmsError,fit,siteID,destination):
         fig.text(0.48,0.70-count*0.05,text,fontsize=12)
         count +=1
     #"""
-    fig.savefig(destination+"/"+str(siteID)+"_"+model.name+"_fitPlot.png")
+    os.makedirs(destination+"/"+model.name,exist_ok=True)
+    fig.savefig(destination+"/"+model.name+"/"+str(siteID)+"_"+model.name+"_fitPlot.png")
 
 #
+def generateMonteCarloHistogram(parameterName, parameterValues, modelName, siteID,outDir):
+    mean = np.mean(parameterValues)
+    std = np.std(parameterValues)
+    figText =[]
+    figText.append(f"Mean= {mean: .2E}")
+    figText.append(f"Std= {std: 0.2E}")
+    binnum = int(2.0*(parameterValues.shape[0]**(1.0/3.0)))
+
+    fig = plt.Figure()
+    ax1 = fig.add_subplot(111)
+    n,bins,patches = ax1.hist(parameterValues,bins=binnum,density=True, alpha=0.8)
+    pmfxvals =  np.linspace(min(bins),max(bins),500)
+    histfit = norm.pdf(pmfxvals,loc=mean,scale=std)
+    ax1.plot(pmfxvals,histfit,'r--',linewidth=2.0)
+    fig.suptitle(f"Monte Carlo results for parameter {parameterName}")
+    ax1.set_xlabel('Fitted Value')
+    ax1.set_ylabel('Probability Density')
+    count = 0
+    for text in figText:
+        fig.text(0.68,0.85-count*0.05,text,fontsize=16)
+        count += 1
+
+    outputDirectory = f"{outDir}/{modelName}/{siteID}"
+    os.makedirs(outputDirectory,exist_ok=True)
+    fig.savefig(f"{outputDirectory}/{siteID}_{parameterName}_{modelName}_monteCarlo.png")
+
+
+#
+def processResidueModel(model,site,timeValues,ydata,rmsError,outDir):
+    fit = fitFunction(model, timeValues, ydata, rmsError)
+    generateFitPlot(model, timeValues, ydata, rmsError, fit, site, outDir)
+    parameterArray = monteCarloFit(model, fit, timeValues, dataDictionary[site], rmsError, 500)
+    idx = 0
+    for parameter in model.parameterNames:
+        generateMonteCarloHistogram(parameter,parameterArray[:,idx], model.name, site, outDir)
+        idx+=1
+    #
+    chi2 = sumSquared(fit,ydata,timeValues,rmsError,model)
+    BIC = chi2 + model.numParameters()*math.log(ydata.shape[0])
+    return BIC, chi2, np.mean(parameterArray,axis=0), np.std(parameterArray,axis=0)
+
+
 twoParameterFit = relaxationModel("TwoParameterFit",
-                                  ["Intensity", "Time constant"], fit2)
+                        ["Intensity", "Tau"],[(1E-9,1E100),(1E-9,1E9)],fit2)
 threeParameterFit = relaxationModel("ThreeParameterFit",
-                                  ["Intensity", "Time constant", "Baseline"], fit3);
+                                  ["Intensity", "Tau", "Baseline"], [(1E-9,1E100),(1E-9,1E9),(-1E100,1E100)] ,fit3)
+def processResidue(site,timeValues,ydata,rmsError,outDir,ThreeParamFitFlag=False):
+    twoParamResult = processResidueModel(twoParameterFit,site,timeValues,ydata,rmsError,outDir)
+    best = twoParamResult
+    if threeParameterFitFlag:
+        threeParamResult = processResidueModel(threeParameterFit,site,timeValues,ydata,rmsError,outDir)
+        print(f"Site {site}: twoParameterFit BIC {twoParamResult[0]}, threeParameterFit {threeParamResult[0]}")
+
+        if(twoParamResult[0] < threeParamResult[0]):
+            print("Chose two parameter")
+        else:
+            best = threeParamResult
+            print("chose three parameter")
+        #
+    #
+    return best
+#
 
 splitCharacter = r'[ \t]+|,'
 firstDataColumnIndex = 2
-inputFileName = 'T2600_4fitting.txt'
+
+if(len(sys.argv) != 4):
+    print("Error: syntax: \n python Masfit.py inputFileName outputDirectory ThreeParamFit?(True or False)")
+    exit(1)
+
+inputFileName = sys.argv[1]
+outputDirectory = sys.argv[2]
+threeParameterFitFlag = sys.argv[3]
+if(threeParameterFitFlag != "True" and threeParameterFitFlag != "False"):
+    raise ("Specify True or False if you want to try Three parameter fits")
+if(threeParameterFitFlag=="True"):
+    threeParameterFitFlag=True
+else:
+    threeParameterFitFlag=False
+
+if os.path.exists(outputDirectory):
+    print(f" Error: Directory {outputDirectory} exists, delete or choose new directory")
+    exit(1)
+
+os.makedirs(outputDirectory)
+
 with open(inputFileName, 'r') as inputFile:
     df = pd.read_csv(inputFile, sep=splitCharacter, engine='python', skiprows=1, header=None)
 
-with open('T2600_4fitting.txt', 'r') as inputFile:
+with open(inputFileName, 'r') as inputFile:
     header = re.split(splitCharacter,inputFile.readline().strip())
 
 timeValues = np.array([ float(value) for value in header[3:] ])
@@ -160,11 +277,24 @@ dataDictionary = dict(zip(keys,values))
 rmsError = calculateNoise(timeValues,df,firstDataColumnIndex)
 rmsError = np.ones(len(timeValues))*rmsError
 
-for site in dataDictionary:
-    initalParamValues = [ np.max(dataDictionary[site]) , np.max(timeValues) ]
-    fit = fitFunction(twoParameterFit,timeValues,dataDictionary[site],rmsError,initalParamValues)
-    generateFitPlot(twoParameterFit,timeValues,dataDictionary[site],rmsError,fit,site,".")
+profiler = cProfile.Profile()
+profiler.enable()
+count=0
+with open(f"{outputDirectory}/fittedTaus.txt",'w') as outputFile:
+    print("Site\tTau\tTau_err",file=outputFile)
+    for site in dataDictionary:
+        fittedParameters = processResidue(site,timeValues,dataDictionary[site],rmsError,outputDirectory)
+        print(f"{site}\t{fittedParameters[2][1]: 0.2E}\t{fittedParameters[3][1]:0.2E}",file=outputFile)
+        count+=1
+        print(f" completed {count} out of {len(dataDictionary.keys())}")
 #
+profiler.disable()
+profiler.dump_stats("output.prof")
+
+
+
+#
+
 
 
 
