@@ -17,6 +17,8 @@ import multiprocessing
 import sys
 import cProfile
 
+VERSION_NUMBER="v2.0.0"
+
 def denormalizeDataFrame(dataFrame):
     #result = dataFrame.iloc[:,[2]].values*dataFrame.iloc[:,3:].values
     result = dataFrame.iloc[:,3:].values
@@ -240,7 +242,7 @@ def processResidue(site,timeValues,ydata,rmsError,outDir,ThreeParamFitFlag=False
 
 splitCharacter = r'[ \t]+|,'
 firstDataColumnIndex = 2
-
+print(f"version number {VERSION_NUMBER}")
 if(len(sys.argv) != 4):
     print("Error: syntax: \n python Masfit.py inputFileName outputDirectory ThreeParamFit?(True or False)")
     exit(1)
