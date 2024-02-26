@@ -38,6 +38,8 @@ def calculateNoise(timeValues,dataFrame,firstCDataColumnIndex):
     #calculate rms
     count = 0;
     rms = 0;
+    if len(index_dict.items()):
+        print(f"Error was expecting at least 3 duplicate points only found: {len(index_dict.items())}")
     for indexList in index_dict.items():
         indexList = indexList[1]
         if len(indexList) < 2:
