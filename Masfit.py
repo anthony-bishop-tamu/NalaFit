@@ -17,7 +17,7 @@ import multiprocessing
 import sys
 import cProfile
 
-VERSION_NUMBER="v2.0.1"
+VERSION_NUMBER="v2.1.0"
 
 def denormalizeDataFrame(dataFrame):
     normalizationFactors = np.array(dataFrame.iloc[:,2].values)
@@ -319,6 +319,8 @@ if os.path.exists(outputDirectory):
     exit(1)
 
 os.makedirs(outputDirectory)
+with open(f"{outputDirectory}/runParameters.txt", 'w') as parameterFile:
+    print(VERSION_NUMBER,sys.argv,file=parameterFile)
 
 with open(inputFileName, 'r') as inputFile:
     df = pd.read_csv(inputFile, sep=splitCharacter, engine='python', skiprows=1, header=None)
