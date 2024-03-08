@@ -17,19 +17,30 @@ import multiprocessing
 import sys
 import cProfile
 
-VERSION_NUMBER="v2.0.0"
+VERSION_NUMBER="v2.0.1"
 
 def denormalizeDataFrame(dataFrame):
-    #result = dataFrame.iloc[:,[2]].values*dataFrame.iloc[:,3:].values
-    result = dataFrame.iloc[:,3:].values
+    normalizationFactors = np.array(dataFrame.iloc[:,2].values)
+    result = normalizationFactors[:,np.newaxis]* np.array(dataFrame.iloc[:,3:].values)
+    #result = dataFrame.iloc[:,3:].values
     dataFrame.iloc[:,3:] = pd.DataFrame(result)
     dataFrame = dataFrame.drop(columns=dataFrame.columns[2])
-    return dataFrame
+
+    return dataFrame, normalizationFactors
+#
+def renormalizeDataFrame(dataFrame):
+    normalizationFactors = np.array(dataFrame.iloc[:,[3]].values)
+    result = dataFrame.iloc[:, 3:].values/normalizationFactors
+    print(dataFrame)
+    print(result)
+    dataFrame.iloc[:, 3:] = pd.DataFrame(result)
 #
 
-def calculateNoise(timeValues,dataFrame,firstCDataColumnIndex):
+def calculateNoise(timeValues,dataFrame: pd.DataFrame,firstCDataColumnIndex,outputFile):
     index_dict = {}
     #determine duplicates
+    dataFrame, normalizationFators = denormalizeDataFrame(dataFrame)
+    print(dataFrame)
     for i, value in enumerate(timeValues):
         if value not in index_dict:
             index_dict[value] = [i+firstCDataColumnIndex]
@@ -40,8 +51,10 @@ def calculateNoise(timeValues,dataFrame,firstCDataColumnIndex):
     #calculate rms
     count = 0;
     rms = 0;
-    if len(index_dict.items()):
-        print(f"Error was expecting at least 3 duplicate points only found: {len(index_dict.items())}")
+    errorDict = {}
+    multiIndexes = np.array([ len(value) for value in index_dict.values() ])
+    if len(multiIndexes[multiIndexes > 1]) < 3:
+        raise Exception(f"Error was expecting at least 3 duplicate points only found: {len(index_dict.items())}")
     for indexList in index_dict.items():
         indexList = indexList[1]
         if len(indexList) < 2:
@@ -49,13 +62,57 @@ def calculateNoise(timeValues,dataFrame,firstCDataColumnIndex):
         elif len(indexList) > 2:
             raise Exception("Cannot have more than two instances of the same time point")
         else:
+            time = timeValues[indexList[0]-2]
             difference = dataFrame.iloc[:,indexList[0]] - dataFrame.iloc[:,indexList[1]]
             difference = np.array(difference)
+            errorDict[time]=difference
             difference = difference*difference
             count += difference.shape[0]
             rms += np.sum(difference)
     #
-    return math.sqrt(rms/count)
+    plotErrorHistogram(errorDict,outputFile)
+    rms = math.sqrt(rms/count)
+    rms = rms*np.ones(dataFrame.iloc[:,firstCDataColumnIndex:].values.shape)
+    rms /= normalizationFators[:,np.newaxis]
+    return rms
+#
+def plotErrorHistogram(errorsDict: dict, outputFile: str):
+
+    figText = []
+    fig = plt.Figure()
+    ax1 = fig.add_subplot(111)
+    fig.suptitle(f"Analysis of duplicate error")
+    for key in errorsDict:
+        mean = np.mean(errorsDict[key])
+        std = np.std(errorsDict[key],ddof=1)
+        SEM = std/np.sqrt(errorsDict[key].shape[0])
+        figText.append(f"TimePoint: {key}, Mean= {mean: .2E}, Std= {std: 0.2E}, SEM: {SEM}")
+        binnum = int(2*(errorsDict[key].shape[0]**(1.0/3.0)))
+        n,bins,patches = ax1.hist(errorsDict[key],bins=binnum,density=True, alpha=0.5,label=f"time: {key}")
+        pmfxvals = np.linspace(min(bins),max(bins),500)
+        histfit = norm.pdf(pmfxvals,loc=mean,scale=std)
+        ax1.plot(pmfxvals,histfit,'r--',linewidth=2.0)
+
+    #
+    total = np.concatenate(tuple(np.array(errorsDict[key]) for key in errorsDict))
+    totalMean = np.mean(total)
+    totalSTD = np.std(total,ddof=1)
+    totalSEM = totalSTD/np.sqrt(total.shape[0])
+    figText.append(f"Total, Mean= {totalMean: .2E}, Std= {totalSTD: 0.2E}, SEM: {totalSEM}")
+    binnum = int(2 * (total.shape[0] ** (1.0 / 3.0)))
+    n, bins, patches = ax1.hist(total, bins=binnum, density=True, alpha=0.5, label=f"total")
+    pmfxvals = np.linspace(min(bins), max(bins), 500)
+    histfit = norm.pdf(pmfxvals, loc=totalMean, scale=totalSTD)
+    ax1.plot(pmfxvals, histfit, 'r--', linewidth=2.0)
+    ax1.set_xlabel('Error')
+    ax1.set_ylabel('Probability Density')
+    count = 0
+    ax1.legend(loc='lower right')
+    for text in figText:
+        fig.text(0.3,0.85-count*0.05,text,fontsize=8)
+        count += 1
+
+    fig.savefig(outputFile)
 #
 class relaxationModel:
     def __init__(self,modelName, parameterNames,bounds,function):
@@ -272,14 +329,14 @@ with open(inputFileName, 'r') as inputFile:
 timeValues = np.array([ float(value) for value in header[3:] ])
 print(timeValues)
 df.iloc[:,firstDataColumnIndex:] = df.iloc[:,firstDataColumnIndex:].astype(float)
-df = denormalizeDataFrame(df)
+print(df)
 
 keys = df.iloc[:,1]
-values = df.iloc[:,firstDataColumnIndex:].apply(np.array,axis = 1)
+values = df.iloc[:,firstDataColumnIndex+1:].apply(np.array,axis = 1)
 
 dataDictionary = dict(zip(keys,values))
-rmsError = calculateNoise(timeValues,df,firstDataColumnIndex)
-rmsError = np.ones(len(timeValues))*rmsError
+rmsError = calculateNoise(timeValues,df,firstDataColumnIndex,f"{outputDirectory}/errorHistogram.png")
+renormalizeDataFrame(df)
 
 profiler = cProfile.Profile()
 profiler.enable()
@@ -287,7 +344,7 @@ count=0
 with open(f"{outputDirectory}/fittedTaus.txt",'w') as outputFile:
     print("Site\tTau\tTau_err",file=outputFile)
     for site in dataDictionary:
-        fittedParameters = processResidue(site,timeValues,dataDictionary[site],rmsError,outputDirectory)
+        fittedParameters = processResidue(site,timeValues,dataDictionary[site],rmsError[count],outputDirectory)
         print(f"{site}\t{fittedParameters[2][1]: 0.2E}\t{fittedParameters[3][1]:0.2E}",file=outputFile)
         count+=1
         print(f" completed {count} out of {len(dataDictionary.keys())}")
