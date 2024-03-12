@@ -1,10 +1,11 @@
 #MASfit v2.0.0
 #Goal of this script is to improve the generality of the fitting software and work with python 3.0+
 import matplotlib.pyplot as plt
+import numpy
 from matplotlib.ticker import ScalarFormatter
 import matplotlib.mlab as mlab
 import scipy.optimize
-from scipy.stats import norm
+from scipy.stats import norm, chi2
 import warnings
 import scipy.optimize as opt
 import pandas as pd
@@ -16,36 +17,34 @@ from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 import sys
 import cProfile
+from brokenaxes import brokenaxes
 
-VERSION_NUMBER="v2.1.0"
-
-def denormalizeDataFrame(dataFrame):
-    normalizationFactors = np.array(dataFrame.iloc[:,2].values)
-    result = normalizationFactors[:,np.newaxis]* np.array(dataFrame.iloc[:,3:].values)
+VERSION_NUMBER="v2.2.0"
+FIRSTDATACOLUMN=1
+def denormalizeDataFrame(dataFrame,normalizationFactors):
+    result = normalizationFactors[:,np.newaxis]* np.array(dataFrame.iloc[:,FIRSTDATACOLUMN:].values)
     #result = dataFrame.iloc[:,3:].values
-    dataFrame.iloc[:,3:] = pd.DataFrame(result)
-    dataFrame = dataFrame.drop(columns=dataFrame.columns[2])
-
+    dataFrame.iloc[:,FIRSTDATACOLUMN:] = pd.DataFrame(result)
     return dataFrame, normalizationFactors
 #
-def renormalizeDataFrame(dataFrame):
-    normalizationFactors = np.array(dataFrame.iloc[:,[3]].values)
-    result = dataFrame.iloc[:, 3:].values/normalizationFactors
+def normalizeDataFrame(dataFrame: pd.DataFrame):
+    normalizationFactors = np.max(dataFrame.iloc[:,FIRSTDATACOLUMN:].values,axis=1)
+    result = dataFrame.iloc[:, FIRSTDATACOLUMN:].values/normalizationFactors[:,np.newaxis]
     print(dataFrame)
     print(result)
-    dataFrame.iloc[:, 3:] = pd.DataFrame(result)
+    dataFrame.iloc[:, FIRSTDATACOLUMN:] = pd.DataFrame(result)
+    return normalizationFactors
 #
 
-def calculateNoise(timeValues,dataFrame: pd.DataFrame,firstCDataColumnIndex,outputFile):
+def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
     index_dict = {}
     #determine duplicates
-    dataFrame, normalizationFators = denormalizeDataFrame(dataFrame)
     print(dataFrame)
     for i, value in enumerate(timeValues):
         if value not in index_dict:
-            index_dict[value] = [i+firstCDataColumnIndex]
+            index_dict[value] = [i+FIRSTDATACOLUMN]
         else:
-            index_dict[value].append(i+firstCDataColumnIndex)
+            index_dict[value].append(i+FIRSTDATACOLUMN)
 
 
     #calculate rms
@@ -54,7 +53,7 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,firstCDataColumnIndex,outp
     errorDict = {}
     multiIndexes = np.array([ len(value) for value in index_dict.values() ])
     if len(multiIndexes[multiIndexes > 1]) < 3:
-        raise Exception(f"Error was expecting at least 3 duplicate points only found: {len(index_dict.items())}")
+        raise Exception(f"Error was expecting at least 3 duplicate points only found: {len(multiIndexes[multiIndexes > 1])}")
     for indexList in index_dict.items():
         indexList = indexList[1]
         if len(indexList) < 2:
@@ -62,7 +61,7 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,firstCDataColumnIndex,outp
         elif len(indexList) > 2:
             raise Exception("Cannot have more than two instances of the same time point")
         else:
-            time = timeValues[indexList[0]-2]
+            time = timeValues[indexList[0]-1]
             difference = dataFrame.iloc[:,indexList[0]] - dataFrame.iloc[:,indexList[1]]
             difference = np.array(difference)
             errorDict[time]=difference
@@ -71,9 +70,14 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,firstCDataColumnIndex,outp
             rms += np.sum(difference)
     #
     plotErrorHistogram(errorDict,outputFile)
-    rms = math.sqrt(rms/count)
-    rms = rms*np.ones(dataFrame.iloc[:,firstCDataColumnIndex:].values.shape)
-    rms /= normalizationFators[:,np.newaxis]
+    rms = math.sqrt(rms/count)/math.sqrt(2)
+    #rms = 1.1E5/math.sqrt(2)
+    #The /sqrt(2) comes from the fact that the rms is a gaussian variable with a variance that is the sum
+    # of the variances of the gaussians that sampled by the original points. Since were are assuming, that the variance
+    # is the same across all points we need to divide by the sqrt(2)
+    rms = rms*np.ones(dataFrame.iloc[:,FIRSTDATACOLUMN:].values.shape)
+    normalizedValues = normalizeDataFrame(dataFrame)
+    rms /= normalizedValues[:,np.newaxis]
     return rms
 #
 def plotErrorHistogram(errorsDict: dict, outputFile: str):
@@ -86,7 +90,7 @@ def plotErrorHistogram(errorsDict: dict, outputFile: str):
         mean = np.mean(errorsDict[key])
         std = np.std(errorsDict[key],ddof=1)
         SEM = std/np.sqrt(errorsDict[key].shape[0])
-        figText.append(f"TimePoint: {key}, Mean= {mean: .2E}, Std= {std: 0.2E}, SEM: {SEM}")
+        figText.append(f"TimePoint: {key}, Mean= {mean: .2E}, Std= {std: 0.2E}, SEM: {SEM: 0.2E}")
         binnum = int(2*(errorsDict[key].shape[0]**(1.0/3.0)))
         n,bins,patches = ax1.hist(errorsDict[key],bins=binnum,density=True, alpha=0.5,label=f"time: {key}")
         pmfxvals = np.linspace(min(bins),max(bins),500)
@@ -98,7 +102,7 @@ def plotErrorHistogram(errorsDict: dict, outputFile: str):
     totalMean = np.mean(total)
     totalSTD = np.std(total,ddof=1)
     totalSEM = totalSTD/np.sqrt(total.shape[0])
-    figText.append(f"Total, Mean= {totalMean: .2E}, Std= {totalSTD: 0.2E}, SEM: {totalSEM}")
+    figText.append(f"Total, Mean= {totalMean: .2E}, Std= {totalSTD: 0.2E}, SEM: {totalSEM: 0.2E}")
     binnum = int(2 * (total.shape[0] ** (1.0 / 3.0)))
     n, bins, patches = ax1.hist(total, bins=binnum, density=True, alpha=0.5, label=f"total")
     pmfxvals = np.linspace(min(bins), max(bins), 500)
@@ -232,7 +236,6 @@ def generateFitPlot(model,timeValues,ydata,rmsError,fit,siteID,destination):
     #"""
     os.makedirs(destination+"/"+model.name,exist_ok=True)
     fig.savefig(destination+"/"+model.name+"/"+str(siteID)+"_"+model.name+"_fitPlot.png")
-
 #
 def generateMonteCarloHistogram(parameterName, parameterValues, modelName, siteID,outDir):
     mean = np.mean(parameterValues)
@@ -262,6 +265,33 @@ def generateMonteCarloHistogram(parameterName, parameterValues, modelName, siteI
 
 
 #
+def plotChi2Distribution(chi2Array, dof, outputDirectory):
+    chi2Array = np.array(chi2Array)
+    fig = plt.Figure()
+    ax1 = fig.add_subplot(111)
+    lower = 0
+    upper = chi2.ppf(0.999,dof)
+
+
+    lowerRange = chi2Array[chi2Array <= upper]
+    nbins = int(2.0*(lowerRange.shape[0]**(1.0/3.0)))
+
+    # Compute the histogram using numpy.histogram
+    counts, bin_edges = np.histogram(lowerRange, bins=nbins)
+    bin_edges = numpy.append(bin_edges,np.max(chi2Array)+1)
+    # Plot the histogram
+    ax1.hist(chi2Array,bins=bin_edges,density=True)
+    pmfxvals = np.linspace(lower, upper, 500)
+    histfit = chi2.pdf(pmfxvals, dof)
+    ax1.plot(pmfxvals, histfit, 'r--', linewidth=2.0)
+
+    ax1.set_xlim((lower,upper))
+    ax1.set_xlabel('Chi2 Value')
+    ax1.set_ylabel('Probability Density')
+
+    os.makedirs(outputDirectory,exist_ok=True)
+    fig.savefig(f"{outputDirectory}/fit_Chi2_distribution.png")
+#
 def processResidueModel(model,site,timeValues,ydata,rmsError,outDir):
     fit = fitFunction(model, timeValues, ydata, rmsError)
     generateFitPlot(model, timeValues, ydata, rmsError, fit, site, outDir)
@@ -283,7 +313,7 @@ threeParameterFit = relaxationModel("ThreeParameterFit",
 def processResidue(site,timeValues,ydata,rmsError,outDir,ThreeParamFitFlag=False):
     twoParamResult = processResidueModel(twoParameterFit,site,timeValues,ydata,rmsError,outDir)
     best = twoParamResult
-    if threeParameterFitFlag:
+    if ThreeParamFitFlag:
         threeParamResult = processResidueModel(threeParameterFit,site,timeValues,ydata,rmsError,outDir)
         print(f"Site {site}: twoParameterFit BIC {twoParamResult[0]}, threeParameterFit {threeParamResult[0]}")
 
@@ -298,7 +328,7 @@ def processResidue(site,timeValues,ydata,rmsError,outDir,ThreeParamFitFlag=False
 #
 
 splitCharacter = r'[ \t]+|,'
-firstDataColumnIndex = 2
+
 print(f"version number {VERSION_NUMBER}")
 if(len(sys.argv) != 4):
     print("Error: syntax: \n python Masfit.py inputFileName outputDirectory ThreeParamFit?(True or False)")
@@ -328,28 +358,37 @@ with open(inputFileName, 'r') as inputFile:
 with open(inputFileName, 'r') as inputFile:
     header = re.split(splitCharacter,inputFile.readline().strip())
 
-timeValues = np.array([ float(value) for value in header[3:] ])
+timeValues = np.array([ float(value) for value in header[FIRSTDATACOLUMN:] ])
 print(timeValues)
-df.iloc[:,firstDataColumnIndex:] = df.iloc[:,firstDataColumnIndex:].astype(float)
+df.iloc[:,FIRSTDATACOLUMN:] = df.iloc[:,FIRSTDATACOLUMN:].astype(float)
 print(df)
 
-keys = df.iloc[:,1]
-values = df.iloc[:,firstDataColumnIndex+1:].apply(np.array,axis = 1)
+rmsError = calculateNoise(timeValues,df,f"{outputDirectory}/errorHistogram.png")
+
+keys = df.iloc[:,0]
+values = df.iloc[:,FIRSTDATACOLUMN:].apply(np.array,axis = 1)
+
 
 dataDictionary = dict(zip(keys,values))
-rmsError = calculateNoise(timeValues,df,firstDataColumnIndex,f"{outputDirectory}/errorHistogram.png")
-renormalizeDataFrame(df)
+
+
 
 profiler = cProfile.Profile()
 profiler.enable()
 count=0
 with open(f"{outputDirectory}/fittedTaus.txt",'w') as outputFile:
     print("Site\tTau\tTau_err",file=outputFile)
+    chi2List=[]
     for site in dataDictionary:
-        fittedParameters = processResidue(site,timeValues,dataDictionary[site],rmsError[count],outputDirectory)
+        fittedParameters = processResidue(site,timeValues,dataDictionary[site],rmsError[count],outputDirectory,threeParameterFitFlag)
         print(f"{site}\t{fittedParameters[2][1]: 0.2E}\t{fittedParameters[3][1]:0.2E}",file=outputFile)
         count+=1
         print(f" completed {count} out of {len(dataDictionary.keys())}")
+        chi2List.append(fittedParameters[1])
+
+    #
+    if not threeParameterFitFlag:
+        plotChi2Distribution(chi2List, timeValues.shape[0] - twoParameterFit.numParameters(), outputDirectory)
 #
 profiler.disable()
 profiler.dump_stats("output.prof")
