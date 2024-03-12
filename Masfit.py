@@ -17,7 +17,6 @@ from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 import sys
 import cProfile
-from brokenaxes import brokenaxes
 
 VERSION_NUMBER="v2.2.0"
 FIRSTDATACOLUMN=1
