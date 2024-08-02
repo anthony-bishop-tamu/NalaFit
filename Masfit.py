@@ -1,4 +1,4 @@
-#MASfit v2.0.0
+#MASfit v2
 #Goal of this script is to improve the generality of the fitting software and work with python 3.0+
 import matplotlib.pyplot as plt
 import numpy
@@ -18,7 +18,7 @@ import multiprocessing
 import sys
 import cProfile
 
-VERSION_NUMBER="v2.2.0"
+VERSION_NUMBER="v2.3.0"
 FIRSTDATACOLUMN=1
 def denormalizeDataFrame(dataFrame,normalizationFactors):
     result = normalizationFactors[:,np.newaxis]* np.array(dataFrame.iloc[:,FIRSTDATACOLUMN:].values)
@@ -32,7 +32,7 @@ def normalizeDataFrame(dataFrame: pd.DataFrame):
     print(dataFrame)
     print(result)
     dataFrame.iloc[:, FIRSTDATACOLUMN:] = pd.DataFrame(result)
-    return normalizationFactors
+    return dataFrame
 #
 
 def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
@@ -48,11 +48,12 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
 
     #calculate rms
     count = 0;
-    rms = 0;
+    rms = np.zeros(dataFrame.shape[0])
     errorDict = {}
     multiIndexes = np.array([ len(value) for value in index_dict.values() ])
     if len(multiIndexes[multiIndexes > 1]) < 3:
         raise Exception(f"Error was expecting at least 3 duplicate points only found: {len(multiIndexes[multiIndexes > 1])}")
+    count = 0
     for indexList in index_dict.items():
         indexList = indexList[1]
         if len(indexList) < 2:
@@ -65,18 +66,16 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
             difference = np.array(difference)
             errorDict[time]=difference
             difference = difference*difference
-            count += difference.shape[0]
-            rms += np.sum(difference)
+            rms += difference
+            count += 1
     #
-    plotErrorHistogram(errorDict,outputFile)
-    rms = math.sqrt(rms/count)/math.sqrt(2)
+    #plotErrorHistogram(errorDict,outputFile)
+    rms = np.sqrt(rms/count)/math.sqrt(2)
     #rms = 1.1E5/math.sqrt(2)
     #The /sqrt(2) comes from the fact that the rms is a gaussian variable with a variance that is the sum
     # of the variances of the gaussians that sampled by the original points. Since were are assuming, that the variance
     # is the same across all points we need to divide by the sqrt(2)
-    rms = rms*np.ones(dataFrame.iloc[:,FIRSTDATACOLUMN:].values.shape)
-    normalizedValues = normalizeDataFrame(dataFrame)
-    rms /= normalizedValues[:,np.newaxis]
+    rms = rms[:,np.newaxis]*np.ones(dataFrame.iloc[:,FIRSTDATACOLUMN:].values.shape)
     return rms
 #
 def plotErrorHistogram(errorsDict: dict, outputFile: str):
@@ -163,7 +162,7 @@ def sumSquared(p,y,x,u,model):
 
 def fitFunction(model,timeValues,ydata,rms,initialParams=None):
     if initialParams is None:
-        ranges = [ (np.max(ydata),2*np.max(ydata)), (np.min(timeValues),5*np.max(timeValues))]
+        ranges = [ (np.max(ydata),2*np.max(ydata)), (max(np.min(timeValues),1E-9),5*np.max(timeValues))]
         if model.numParameters() == 3:
             ranges.append((-1,1))
         #
@@ -294,7 +293,7 @@ def plotChi2Distribution(chi2Array, dof, outputDirectory):
 def processResidueModel(model,site,timeValues,ydata,rmsError,outDir):
     fit = fitFunction(model, timeValues, ydata, rmsError)
     generateFitPlot(model, timeValues, ydata, rmsError, fit, site, outDir)
-    parameterArray = monteCarloFit(model, fit, timeValues, dataDictionary[site], rmsError, 500)
+    parameterArray = monteCarloFit(model, fit, timeValues, ydata, rmsError, 500)
     idx = 0
     for parameter in model.parameterNames:
         generateMonteCarloHistogram(parameter,parameterArray[:,idx], model.name, site, outDir)
@@ -302,7 +301,9 @@ def processResidueModel(model,site,timeValues,ydata,rmsError,outDir):
     #
     chi2 = sumSquared(fit,ydata,timeValues,rmsError,model)
     BIC = chi2 + model.numParameters()*math.log(ydata.shape[0])
-    return BIC, chi2, np.mean(parameterArray,axis=0), np.std(parameterArray,axis=0)
+    meanValues = np.mean(parameterArray,axis=0)
+    stddevs = np.std(parameterArray,axis=0)
+    return BIC, chi2, meanValues, stddevs
 
 
 twoParameterFit = relaxationModel("TwoParameterFit",
@@ -326,72 +327,75 @@ def processResidue(site,timeValues,ydata,rmsError,outDir,ThreeParamFitFlag=False
     return best
 #
 
-splitCharacter = r'[ \t]+|,'
+def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
+    splitCharacter = r'[ \t]+|,'
+    if (threeParameterFitFlag != "True" and threeParameterFitFlag != "False"):
+        raise ("Specify True or False if you want to try Three parameter fits")
+    if (threeParameterFitFlag == "True"):
+        threeParameterFitFlag = True
+    else:
+        threeParameterFitFlag = False
 
-print(f"version number {VERSION_NUMBER}")
-if(len(sys.argv) != 4):
-    print("Error: syntax: \n python Masfit.py inputFileName outputDirectory ThreeParamFit?(True or False)")
-    exit(1)
+    if os.path.exists(outputDirectory):
+        print(f" Error: Directory {outputDirectory} exists, delete or choose new directory")
+        exit(1)
 
-inputFileName = sys.argv[1]
-outputDirectory = sys.argv[2]
-threeParameterFitFlag = sys.argv[3]
-if(threeParameterFitFlag != "True" and threeParameterFitFlag != "False"):
-    raise ("Specify True or False if you want to try Three parameter fits")
-if(threeParameterFitFlag=="True"):
-    threeParameterFitFlag=True
-else:
-    threeParameterFitFlag=False
+    os.makedirs(outputDirectory)
+    with open(f"{outputDirectory}/runParameters.txt", 'w') as parameterFile:
+        print(VERSION_NUMBER, sys.argv, file=parameterFile)
 
-if os.path.exists(outputDirectory):
-    print(f" Error: Directory {outputDirectory} exists, delete or choose new directory")
-    exit(1)
+    with open(inputFileName, 'r') as inputFile:
+        df = pd.read_csv(inputFile, sep=splitCharacter, engine='python', skiprows=1, header=None)
 
-os.makedirs(outputDirectory)
-with open(f"{outputDirectory}/runParameters.txt", 'w') as parameterFile:
-    print(VERSION_NUMBER,sys.argv,file=parameterFile)
+    with open(inputFileName, 'r') as inputFile:
+        header = re.split(splitCharacter, inputFile.readline().strip())
 
-with open(inputFileName, 'r') as inputFile:
-    df = pd.read_csv(inputFile, sep=splitCharacter, engine='python', skiprows=1, header=None)
+    timeValues = np.array([float(value) for value in header[FIRSTDATACOLUMN:]])
+    print(timeValues)
+    df.iloc[:, FIRSTDATACOLUMN:] = df.iloc[:, FIRSTDATACOLUMN:].astype(float)
+    print(df)
 
-with open(inputFileName, 'r') as inputFile:
-    header = re.split(splitCharacter,inputFile.readline().strip())
+    df = normalizeDataFrame(df)
+    rmsError = calculateNoise(timeValues, df, f"{outputDirectory}/errorHistogram.png")
 
-timeValues = np.array([ float(value) for value in header[FIRSTDATACOLUMN:] ])
-print(timeValues)
-df.iloc[:,FIRSTDATACOLUMN:] = df.iloc[:,FIRSTDATACOLUMN:].astype(float)
-print(df)
+    keys = df.iloc[:, 0]
+    values = df.iloc[:, FIRSTDATACOLUMN:].apply(np.array, axis=1)
 
-rmsError = calculateNoise(timeValues,df,f"{outputDirectory}/errorHistogram.png")
+    dataDictionary = dict(zip(keys, values))
 
-keys = df.iloc[:,0]
-values = df.iloc[:,FIRSTDATACOLUMN:].apply(np.array,axis = 1)
+    profiler = cProfile.Profile()
+    profiler.enable()
+    count = 0
+    with open(f"{outputDirectory}/fittedTaus.txt", 'w') as outputFile:
+        print("Site\tTau\tTau_err", file=outputFile)
+        chi2List = []
+        for site in dataDictionary:
+            fittedParameters = processResidue(site, timeValues, dataDictionary[site], rmsError[count], outputDirectory,
+                                              threeParameterFitFlag)
+            print(f"{site}\t{fittedParameters[2][1]: 0.2E}\t{fittedParameters[3][1]:0.2E}", file=outputFile)
+            count += 1
+            print(f" completed {count} out of {len(dataDictionary.keys())}")
+            chi2List.append(fittedParameters[1])
 
-
-dataDictionary = dict(zip(keys,values))
-
-
-
-profiler = cProfile.Profile()
-profiler.enable()
-count=0
-with open(f"{outputDirectory}/fittedTaus.txt",'w') as outputFile:
-    print("Site\tTau\tTau_err",file=outputFile)
-    chi2List=[]
-    for site in dataDictionary:
-        fittedParameters = processResidue(site,timeValues,dataDictionary[site],rmsError[count],outputDirectory,threeParameterFitFlag)
-        print(f"{site}\t{fittedParameters[2][1]: 0.2E}\t{fittedParameters[3][1]:0.2E}",file=outputFile)
-        count+=1
-        print(f" completed {count} out of {len(dataDictionary.keys())}")
-        chi2List.append(fittedParameters[1])
-
+        #
+        if not threeParameterFitFlag:
+            plotChi2Distribution(chi2List, timeValues.shape[0] - twoParameterFit.numParameters(), outputDirectory)
     #
-    if not threeParameterFitFlag:
-        plotChi2Distribution(chi2List, timeValues.shape[0] - twoParameterFit.numParameters(), outputDirectory)
+    profiler.disable()
+    profiler.dump_stats("output.prof")
 #
-profiler.disable()
-profiler.dump_stats("output.prof")
 
+if __name__ == "__main__":
+
+    print(f"version number {VERSION_NUMBER}")
+    if(len(sys.argv) != 4):
+        print("Error: syntax: \n python Masfit.py inputFileName outputDirectory ThreeParamFit?(True or False)")
+        exit(1)
+
+    inputFileName = sys.argv[1]
+    outputDirectory = sys.argv[2]
+    threeParameterFitFlag = sys.argv[3]
+    runMasFit(inputFileName, outputDirectory, threeParameterFitFlag)
 
 
 #
