@@ -16,3 +16,7 @@ matplotlib
 scipy
 numpy
 pandas
+
+v2.3.0
+-fixed error calculation, so that a separate error is calcualted for each resonance as opposed to a single error for all peaks
+-fixed issue with a time delay of zero
