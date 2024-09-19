@@ -18,7 +18,7 @@ import multiprocessing
 import sys
 import cProfile
 
-VERSION_NUMBER="v2.3.0"
+VERSION_NUMBER="v2.3.1"
 FIRSTDATACOLUMN=1
 def denormalizeDataFrame(dataFrame,normalizationFactors):
     result = normalizationFactors[:,np.newaxis]* np.array(dataFrame.iloc[:,FIRSTDATACOLUMN:].values)
@@ -162,7 +162,7 @@ def sumSquared(p,y,x,u,model):
 
 def fitFunction(model,timeValues,ydata,rms,initialParams=None):
     if initialParams is None:
-        ranges = [ (np.max(ydata),2*np.max(ydata)), (max(np.min(timeValues),1E-9),5*np.max(timeValues))]
+        ranges = [ (np.max(ydata),2*np.max(ydata)), (max(np.min(timeValues),1E-3),5*np.max(timeValues))]
         if model.numParameters() == 3:
             ranges.append((-1,1))
         #
