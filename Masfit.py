@@ -32,7 +32,7 @@ def normalizeDataFrame(dataFrame: pd.DataFrame):
     print(dataFrame)
     print(result)
     dataFrame.iloc[:, FIRSTDATACOLUMN:] = pd.DataFrame(result)
-    return dataFrame
+    return dataFrame, normalizationFactors
 #
 
 def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
@@ -47,7 +47,6 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
 
 
     #calculate rms
-    count = 0;
     rms = np.zeros(dataFrame.shape[0])
     errorDict = {}
     multiIndexes = np.array([ len(value) for value in index_dict.values() ])
@@ -64,19 +63,12 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
             time = timeValues[indexList[0]-1]
             difference = dataFrame.iloc[:,indexList[0]] - dataFrame.iloc[:,indexList[1]]
             difference = np.array(difference)
-            errorDict[time]=difference
-            difference = difference*difference
-            rms += difference
-            count += 1
+            errorDict[time]=np.sqrt(np.square(difference).sum()/difference.shape[0]/2.0)
     #
-    #plotErrorHistogram(errorDict,outputFile)
-    rms = np.sqrt(rms/count)/math.sqrt(2)
-    #rms = 1.1E5/math.sqrt(2)
-    #The /sqrt(2) comes from the fact that the rms is a gaussian variable with a variance that is the sum
-    # of the variances of the gaussians that sampled by the original points. Since were are assuming, that the variance
-    # is the same across all points we need to divide by the sqrt(2)
-    rms = rms[:,np.newaxis]*np.ones(dataFrame.iloc[:,FIRSTDATACOLUMN:].values.shape)
-    return rms
+    duplicate_keys = np.array(list(errorDict.keys()))
+    closest_times = duplicate_keys[np.argmin(np.abs(timeValues[:,None]- duplicate_keys[None,:]), axis=-1)]
+    errors = np.array([errorDict[t] for t in closest_times])
+    return np.repeat(errors[None,:],dataFrame.shape[0],axis=0)
 #
 def plotErrorHistogram(errorsDict: dict, outputFile: str):
 
@@ -355,8 +347,10 @@ def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
     df.iloc[:, FIRSTDATACOLUMN:] = df.iloc[:, FIRSTDATACOLUMN:].astype(float)
     print(df)
 
-    df = normalizeDataFrame(df)
+
     rmsError = calculateNoise(timeValues, df, f"{outputDirectory}/errorHistogram.png")
+    df, normalization_factors = normalizeDataFrame(df)
+    rmsError /= normalization_factors[:,None]
 
     keys = df.iloc[:, 0]
     values = df.iloc[:, FIRSTDATACOLUMN:].apply(np.array, axis=1)
