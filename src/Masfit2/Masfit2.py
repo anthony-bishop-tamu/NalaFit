@@ -16,9 +16,9 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 import sys
-import cProfile
+import argparse
+from ._version import __version__
 
-VERSION_NUMBER="v2.3.1"
 FIRSTDATACOLUMN=1
 def denormalizeDataFrame(dataFrame,normalizationFactors):
     result = normalizationFactors[:,np.newaxis]* np.array(dataFrame.iloc[:,FIRSTDATACOLUMN:].values)
@@ -29,8 +29,8 @@ def denormalizeDataFrame(dataFrame,normalizationFactors):
 def normalizeDataFrame(dataFrame: pd.DataFrame):
     normalizationFactors = np.max(dataFrame.iloc[:,FIRSTDATACOLUMN:].values,axis=1)
     result = dataFrame.iloc[:, FIRSTDATACOLUMN:].values/normalizationFactors[:,np.newaxis]
-    print(dataFrame)
-    print(result)
+    #print(dataFrame)
+    #print(result)
     dataFrame.iloc[:, FIRSTDATACOLUMN:] = pd.DataFrame(result)
     return dataFrame, normalizationFactors
 #
@@ -38,7 +38,7 @@ def normalizeDataFrame(dataFrame: pd.DataFrame):
 def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
     index_dict = {}
     #determine duplicates
-    print(dataFrame)
+    #print(dataFrame)
     for i, value in enumerate(timeValues):
         if value not in index_dict:
             index_dict[value] = [i+FIRSTDATACOLUMN]
@@ -63,11 +63,18 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
             time = timeValues[indexList[0]-1]
             difference = dataFrame.iloc[:,indexList[0]] - dataFrame.iloc[:,indexList[1]]
             difference = np.array(difference)
-            errorDict[time]=np.sqrt(np.square(difference).sum()/difference.shape[0]/2.0)
+
+            std = 1.4826*np.median(np.abs(difference))
+            #std = 1.4826 * np.sqrt(np.median(difference**2))
+
+            #std = np.sqrt(np.square(difference).sum() / difference.shape[0])
+            errorDict[time]=std/math.sqrt(2)
     #
     duplicate_keys = np.array(list(errorDict.keys()))
-    closest_times = duplicate_keys[np.argmin(np.abs(timeValues[:,None]- duplicate_keys[None,:]), axis=-1)]
-    errors = np.array([errorDict[t] for t in closest_times])
+    duplicate_keys.sort()
+    duplicate_errors = np.array([errorDict[key] for key in duplicate_keys ])
+
+    errors = np.interp(timeValues,duplicate_keys,duplicate_errors)
     return np.repeat(errors[None,:],dataFrame.shape[0],axis=0)
 #
 def plotErrorHistogram(errorsDict: dict, outputFile: str):
@@ -126,12 +133,12 @@ class relaxationModel:
 #
 def fit2(x,p):
     assert(len(p) == 2)
-    with warnings.catch_warnings():
-        warnings.filterwarnings("error")
-        try:
-            return (p[0]*(np.exp((x*-1.0/p[1]))))
-        except Warning as e:
-            raise OverflowError(f"Overflow error in fit2: {p}, {x}")
+    #with warnings.catch_warnings():
+    #warnings.filterwarnings("error")
+        #try:
+    return (p[0]*(np.exp((x*-1.0/p[1]))))
+        #except Warning as e:
+        #raise OverflowError(f"Overflow error in fit2: {p}, {x}")
         #
 
 
@@ -321,12 +328,6 @@ def processResidue(site,timeValues,ydata,rmsError,outDir,ThreeParamFitFlag=False
 
 def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
     splitCharacter = r'[ \t]+|,'
-    if (threeParameterFitFlag != "True" and threeParameterFitFlag != "False"):
-        raise ("Specify True or False if you want to try Three parameter fits")
-    if (threeParameterFitFlag == "True"):
-        threeParameterFitFlag = True
-    else:
-        threeParameterFitFlag = False
 
     if os.path.exists(outputDirectory):
         print(f" Error: Directory {outputDirectory} exists, delete or choose new directory")
@@ -334,7 +335,7 @@ def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
 
     os.makedirs(outputDirectory)
     with open(f"{outputDirectory}/runParameters.txt", 'w') as parameterFile:
-        print(VERSION_NUMBER, sys.argv, file=parameterFile)
+        print(__version__, sys.argv, file=parameterFile)
 
     with open(inputFileName, 'r') as inputFile:
         df = pd.read_csv(inputFile, sep=splitCharacter, engine='python', skiprows=1, header=None)
@@ -343,12 +344,13 @@ def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
         header = re.split(splitCharacter, inputFile.readline().strip())
 
     timeValues = np.array([float(value) for value in header[FIRSTDATACOLUMN:]])
-    print(timeValues)
+    #print(timeValues)
     df.iloc[:, FIRSTDATACOLUMN:] = df.iloc[:, FIRSTDATACOLUMN:].astype(float)
-    print(df)
+    #print(df)
 
 
     rmsError = calculateNoise(timeValues, df, f"{outputDirectory}/errorHistogram.png")
+    pd.DataFrame({'time points': timeValues, 'unnormalized_error': rmsError[0,:]}).to_csv(f"{outputDirectory}/errorValues.csv", index=False)
     df, normalization_factors = normalizeDataFrame(df)
     rmsError /= normalization_factors[:,None]
 
@@ -357,8 +359,6 @@ def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
 
     dataDictionary = dict(zip(keys, values))
 
-    profiler = cProfile.Profile()
-    profiler.enable()
     count = 0
     with open(f"{outputDirectory}/fittedTaus.txt", 'w') as outputFile:
         print("Site\tTau\tTau_err", file=outputFile)
@@ -375,22 +375,20 @@ def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
         if not threeParameterFitFlag:
             plotChi2Distribution(chi2List, timeValues.shape[0] - twoParameterFit.numParameters(), outputDirectory)
     #
-    profiler.disable()
-    profiler.dump_stats("output.prof")
 #
 
-if __name__ == "__main__":
+def main(argv=None) -> int:
 
-    print(f"version number {VERSION_NUMBER}")
-    if(len(sys.argv) != 4):
-        print("Error: syntax: \n python Masfit.py inputFileName outputDirectory ThreeParamFit?(True or False)")
-        exit(1)
+    print(f"version number {__version__}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", help="Input file", type=str,required=True)
+    parser.add_argument("--output", help="Output directory", type=str,required=True)
+    #parser.add_argument("--baseline",action='store_true',help="include baseline in exponential (NOT recommended)")
 
-    inputFileName = sys.argv[1]
-    outputDirectory = sys.argv[2]
-    threeParameterFitFlag = sys.argv[3]
-    runMasFit(inputFileName, outputDirectory, threeParameterFitFlag)
+    args = parser.parse_args()
 
+    #CURRENTLY NOT SUPPORTING OTHER MODELS, exponential + baseline is not _fully_ supported, simple exponential only
+    runMasFit(args.input, args.output, False)
 
 #
 

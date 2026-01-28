@@ -1,1 +1,0 @@
-v2.2.0 ['Masfit.py', 'kr042.txt', '/Users/kellyrisch/Documents/TheWandLab/Data/IMPDynamicsProj/AIL_Data/AILNMR_Spectra/800_AIL/kr042_IMPD_AIL_111023/kr042_proccessed/ucsf/MASfit', 'False']

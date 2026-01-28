@@ -1,6 +1,6 @@
 #CARO: run as python outputfolder datasetname datatype &
 #python3 Masfit_pipe_v1.py ca08 dz 7
-#for Taylor python Masfit.py
+#for Taylor python Masfit2.py
 #masfit v11
 #Corrected single exponential relaxation fitting script
 #Corrected Rate to Time Constant
@@ -312,7 +312,7 @@ def get_sigma(data,c):
                 if abs(diff3) >= cutoff:
                         outliers.append(data[x][0])
                         outliers.append(diff3)
-			outliers.append('duplicate 3')
+		                outliers.append('duplicate 3')
                         final_outliers.append(outliers)
                         outliers=[]
                 temp1.append(diff1)
