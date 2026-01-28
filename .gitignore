@@ -1,0 +1,56 @@
+# Ignore PyCharm project settings
+__pycache__/
+# Ignore virtual environments
+venv/
+.env/
+
+# Ignore compiled Python files
+*.py[cod]
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore logs, temporary, and backup files
+*.log
+*.bak
+
+# Ignore system-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore OS and IDE metadata
+*.swp
+# Byte-compiled / optimized / DLL files
+*.so
+*.pyd
+*.dll
+
+# Virtual environments
+.venv/
+env/
+ENV/
+*.env
+*.venv
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# setuptools_scm version file (if written to disk)
+src/pHarmony/_version.py
+
+# VS Code and JetBrains project files
+.vscode/
+.idea/
+
+# PyCharm and pytest cache
+*.cover
+.coverage
+.pytest_cache/
+.cache/
+**/test_output/
+TestDataSets/
+#

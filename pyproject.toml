@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Masfit2"
+dynamic = ["version"]
+description = "Package for fittingrelaxation rates for T1 and T2 data sets"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0 ",
+    "matplotlib>=3.2",
+    "scipy>=1.10",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where=["src"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+root = "."
+write_to = "src/Masfit2/_version.py"
+
+[project.scripts]
+Masfit2 = "Masfit2.Masfit2:main"
