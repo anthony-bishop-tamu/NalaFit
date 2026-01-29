@@ -52,7 +52,7 @@ import sys
 #Specify path to input data (should be .txt file) below
 #here=os.getcwd()
 #handle=sys.argv[1]+sys.argv[3]+sys.argv[2]
-datapath='/home/nmrbox/tcole/nmrdata/FLParkin_backbonedynamics/FLParkin_backboneT1T2ratecalc/T2600_4fitting.txt'
+datapath='/home/nmrbox/tcole/nmrdata/FLParkin_backbonedynamics/FLParkin_backboneT1T2ratecalc/FLParkin_T2600_4fitting.txt'
 
 #excludepath=here+'/'+handle+'/'+handle+'_forfitting.txt.excluded'
 #if os.path.isfile(excludepath):
