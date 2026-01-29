@@ -326,7 +326,7 @@ def processResidue(site,timeValues,ydata,rmsError,outDir,ThreeParamFitFlag=False
     return best
 #
 
-def runMasFit(inputFileName,outputDirectory,threeParameterFitFlag=False):
+def runNalaFit(inputFileName, outputDirectory, threeParameterFitFlag=False):
     splitCharacter = r'[ \t]+|,'
 
     if os.path.exists(outputDirectory):
@@ -388,7 +388,7 @@ def main(argv=None) -> int:
     args = parser.parse_args()
 
     #CURRENTLY NOT SUPPORTING OTHER MODELS, exponential + baseline is not _fully_ supported, simple exponential only
-    runMasFit(args.input, args.output, False)
+    runNalaFit(args.input, args.output, False)
 
 #
 

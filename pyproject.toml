@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Masfit2"
+name = "NalaFit"
 dynamic = ["version"]
 description = "Package for fittingrelaxation rates for T1 and T2 data sets"
 requires-python = ">=3.8"
@@ -25,7 +25,7 @@ version_scheme = "guess-next-dev"
 local_scheme = "node-and-date"
 tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
 root = "."
-write_to = "src/Masfit2/_version.py"
+write_to = "src/NalaFit/_version.py"
 
 [project.scripts]
-Masfit2 = "Masfit2.Masfit2:main"
+NalaFit = "NalaFit.NalaFit:main"

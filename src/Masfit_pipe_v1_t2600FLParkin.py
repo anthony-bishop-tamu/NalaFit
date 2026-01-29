@@ -1,6 +1,6 @@
 #CARO: run as python outputfolder datasetname datatype &
 #python3 Masfit_pipe_v1.py ca08 dz 7
-#for Taylor python Masfit2.py
+#for Taylor python NalaFit.py
 #masfit v11
 #Corrected single exponential relaxation fitting script
 #Corrected Rate to Time Constant
