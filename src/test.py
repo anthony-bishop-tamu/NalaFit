@@ -1,5 +1,5 @@
-from Masfit2.Masfit2 import runMasFit
+from NalaFit.NalaFit import runNalaFit
 import shutil
 
 shutil.rmtree("../output",ignore_errors=True)
-runMasFit("../IL1Ra_gtm0375t2.txt","../output", False)
+runNalaFit("../IL1Ra_gtm0375t2.txt", "../output", False)

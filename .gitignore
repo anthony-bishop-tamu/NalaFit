@@ -40,7 +40,7 @@ dist/
 *.whl
 
 # setuptools_scm version file (if written to disk)
-src/Masfit2/_version.py
+src/NalaFit/_version.py
 
 # VS Code and JetBrains project files
 .vscode/
