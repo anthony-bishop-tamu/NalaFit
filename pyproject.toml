@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Package for fittingrelaxation rates for T1 and T2 data sets"
 requires-python = ">=3.8"
 dependencies = [
-    "numpy>=1.24.0",
+    "numpy>=1.24.0,<2",
     "pandas>=2.0 ",
     "matplotlib>=3.2",
     "scipy>=1.10",

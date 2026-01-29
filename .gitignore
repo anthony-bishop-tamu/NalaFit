@@ -52,5 +52,5 @@ src/Masfit2/_version.py
 .pytest_cache/
 .cache/
 **/test_output/
-TestDataSets/
+TestDataSets/outputs/
 #
