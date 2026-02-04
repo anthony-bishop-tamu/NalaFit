@@ -50,8 +50,8 @@ def calculateNoise(timeValues,dataFrame: pd.DataFrame,outputFile):
     rms = np.zeros(dataFrame.shape[0])
     errorDict = {}
     multiIndexes = np.array([ len(value) for value in index_dict.values() ])
-    if len(multiIndexes[multiIndexes > 1]) < 3:
-        raise Exception(f"Error was expecting at least 3 duplicate points only found: {len(multiIndexes[multiIndexes > 1])}")
+    if len(multiIndexes[multiIndexes > 1]) < 2:
+        raise Exception(f"Error was expecting at least 2 duplicate points only found: {len(multiIndexes[multiIndexes > 1])}")
     count = 0
     for indexList in index_dict.items():
         indexList = indexList[1]
