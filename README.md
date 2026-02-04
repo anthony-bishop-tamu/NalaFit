@@ -31,7 +31,7 @@ I may include support for things like exponential fits with baseline or biexpone
 
 ### Install NalaFit
 ```bash
-    pip install git+https://github.com/anthony-bishop-tamu/NalaFit.git@main 
+    pip install git+https://github.com/anthony-bishop-tamu/NalaFit.git@main:wq 
 ```
 Be sure your target conda environment is active!
 pip should automatically install the following dependencies
