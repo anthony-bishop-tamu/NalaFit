@@ -31,7 +31,7 @@ I may include support for things like exponential fits with baseline or biexpone
 
 ### Install NalaFit
 ```bash
-    pip install git+https://github.com/anthony-bishop-tamu/NalaFit.git@v2.4.0 
+    pip install git+https://github.com/anthony-bishop-tamu/NalaFit.git@main 
 ```
 Be sure your target conda environment is active!
 pip should automatically install the following dependencies
@@ -55,7 +55,7 @@ where relaxation_data.txt and output_folder are the data source and destination 
 
 ### NalaFit Input
 In TestDataSets there are two example input files. NalaFit has no requirement as to the number of data points in your
-relaxation curve except that at least three time points were collected in duplicate.
+relaxation curve except that at least two time points were collected in duplicate.
 
 The input file is just whitespace delimited (any number of tabs and/or spaces will work)
 
